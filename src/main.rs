@@ -156,7 +156,7 @@ fn ls() {
                 let name = String::from_utf8_lossy(&inode.name)
                     .trim_end_matches('\0')
                     .to_string();
-                println!("{:<32}{:>8} ls {} ls {}", name, inode.size, inode.start_block, inode.block_count);
+                println!("{:<32}{:>8}", name, inode.size);
             }
         }
     }
@@ -263,7 +263,6 @@ fn write_content_to_blocks(
     }
     // return data_area_offset;
 }
-
 
 fn write_inode(
     name: &str,
