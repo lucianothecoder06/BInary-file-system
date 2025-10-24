@@ -129,6 +129,8 @@ fn cat(filename: &str) {
     }
 }
 
+
+
 fn ls() {
     let mut file = fs::OpenOptions::new()
         .read(true)
@@ -154,7 +156,7 @@ fn ls() {
                 let name = String::from_utf8_lossy(&inode.name)
                     .trim_end_matches('\0')
                     .to_string();
-                println!("{:<32}{:>8}", name, inode.size);
+                println!("{:<32}{:>8} ls {} ls {}", name, inode.size, inode.start_block, inode.block_count);
             }
         }
     }
@@ -195,10 +197,8 @@ fn find_free_inode(file: &mut fs::File, superblock: &Superblock) -> Option<u32> 
 fn find_free_block(
     file: &mut fs::File,
     superblock: &Superblock,
-
     content: &str,
-) -> Option<Vec<u32>> {
-    // let mut inode_bytes = vec![0u8; std::mem::size_of::<Inode>()];
+) -> Option<(Vec<u32>, Vec<u8>)> {  // 👈 Return tuple (blocks, bitmap)
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
     let bitmap_offset = inode_table_offset + (superblock.total_inodes as u64 * inode_size as u64);
@@ -231,7 +231,7 @@ fn find_free_block(
     if allocated_blocks.len() < blocks_needed as usize {
         panic!("Not enough free blocks!");
     }
-    Some(allocated_blocks) // Return the first allocated block
+    Some((allocated_blocks, bitmap_bits))  // 👈 Return BOTH
 }
 
 fn write_content_to_blocks(
@@ -263,6 +263,7 @@ fn write_content_to_blocks(
     }
     // return data_area_offset;
 }
+
 
 fn write_inode(
     name: &str,
@@ -309,34 +310,42 @@ fn create(name: &str, content: &str) {
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
     let free_inode_index = find_free_inode(&mut file, &superblock);
-    let allocated_blocks = find_free_block(&mut file, &superblock, content);
+    
+    // 👇 Now we get BOTH blocks and bitmap
+    let (allocated_blocks, bitmap_bits) = find_free_block(&mut file, &superblock, content)
+        .expect("Failed to allocate blocks");
+    
     let content_bytes = content.as_bytes();
     let blocks_needed =
         ((content_bytes.len() as u32 + superblock.block_size - 1) / superblock.block_size).max(1);
     let bitmap_offset = inode_table_offset + (superblock.total_inodes as u64 * inode_size as u64);
-    let bitmap_size = ((superblock.total_blocks + 7) / 8) as usize;
-
+    
+    println!(
+        "Free inode index: {:?}, allocated blocks: {:?}",
+        free_inode_index, allocated_blocks
+    );
+    
     write_content_to_blocks(
         &mut file,
         &superblock,
-        &allocated_blocks.clone().unwrap(),
+        &allocated_blocks,  // 👈 No need to clone/unwrap
         content,
     );
+    
     write_inode(
         name,
         &mut file,
         &superblock,
         free_inode_index.unwrap(),
-        &allocated_blocks.unwrap(),
+        &allocated_blocks,  // 👈 No need to unwrap
         content,
     );
-    let bitmap_bits = vec![0u8; bitmap_size];
-    // file.read_exact(&mut bitmap_bits).unwrap();
 
+    // ✅ Write the UPDATED bitmap (not a fresh one!)
     file.seek(std::io::SeekFrom::Start(bitmap_offset)).unwrap();
-    file.write_all(&bitmap_bits).unwrap();
+    file.write_all(&bitmap_bits).unwrap();  // 👈 Use the bitmap from find_free_block!
 
-    // 8. Update superblock
+    // Update superblock
     let updated_sb = Superblock {
         used_blocks: superblock.used_blocks + blocks_needed,
         used_inodes: superblock.used_inodes + 1,
@@ -354,7 +363,6 @@ fn create(name: &str, content: &str) {
     file.sync_all().unwrap();
     println!("✅ archivo '{}' creado exitosamente!", name);
 }
-
 fn format() {
     let block_size: u32 = 512;
     let total_blocks: u32 = 1024;
