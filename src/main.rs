@@ -7,11 +7,11 @@ use std::io::Write;
 #[repr(C)]
 pub struct Superblock {
     pub total_size: u32,
-    pub block_size: u32,
-    pub total_blocks: u32,
-    pub total_inodes: u32,
-    pub used_blocks: u32,
-    pub used_inodes: u32,
+    pub block_size: u16,
+    pub total_blocks: u16,
+    pub total_inodes: u16,
+    pub used_blocks: u16,
+    pub used_inodes: u16,
 }
 
 #[repr(C)]
@@ -19,9 +19,9 @@ pub struct Superblock {
 pub struct Inode {
     pub used: u8,
     pub name: [u8; 32],
-    pub size: u32,
-    pub start_block: u32,
-    pub block_count: u32,
+    pub size: u16,
+    pub start_block: u16,
+    pub block_count: u16,
 }
 
 pub struct Bitmap {
@@ -79,7 +79,7 @@ fn cat(filename: &str) {
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(".bin")
+        .open("fs-10153287.bin")
         .expect("Sistema de archivo no encontrado corre 'format' primero!");
 
     let superblock = read_superblock(&mut file);
@@ -129,19 +129,17 @@ fn cat(filename: &str) {
     }
 }
 
-
-
 fn ls() {
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(".bin")
+        .open("fs-10153287.bin")
         .expect("Sistema de archivo no encontrado corre 'format' primero!");
 
     let superblock = read_superblock(&mut file);
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
-    println!("{:<32}{:>8}", "nombre", "size");
+    println!("{:<32}{:>14}{:>16}", "nombre", "size", "bloque inicial");
     for i in 0..superblock.total_inodes {
         file.seek(std::io::SeekFrom::Start(
             inode_table_offset + (i as u64 * inode_size as u64),
@@ -156,7 +154,10 @@ fn ls() {
                 let name = String::from_utf8_lossy(&inode.name)
                     .trim_end_matches('\0')
                     .to_string();
-                println!("{:<32}{:>8}", name, inode.size);
+                println!(
+                    "{:<32}{:>8} bytes{:>16}",
+                    name, inode.size, inode.start_block
+                );
             }
         }
     }
@@ -174,7 +175,7 @@ fn read_superblock(file: &mut fs::File) -> Superblock {
     return superblock;
 }
 
-fn find_free_inode(file: &mut fs::File, superblock: &Superblock) -> Option<u32> {
+fn find_free_inode(file: &mut fs::File, superblock: &Superblock) -> Option<u16> {
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
 
@@ -198,7 +199,7 @@ fn find_free_block(
     file: &mut fs::File,
     superblock: &Superblock,
     content: &str,
-) -> Option<(Vec<u32>, Vec<u8>)> {  // 👈 Return tuple (blocks, bitmap)
+) -> Option<(Vec<u16>, Vec<u8>)> {
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
     let bitmap_offset = inode_table_offset + (superblock.total_inodes as u64 * inode_size as u64);
@@ -210,7 +211,7 @@ fn find_free_block(
 
     let content_bytes = content.as_bytes();
     let blocks_needed =
-        ((content_bytes.len() as u32 + superblock.block_size - 1) / superblock.block_size).max(1);
+        ((content_bytes.len() as u16 + superblock.block_size - 1) / superblock.block_size).max(1);
 
     let mut allocated_blocks = Vec::new();
     for block in 0..superblock.total_blocks {
@@ -231,13 +232,13 @@ fn find_free_block(
     if allocated_blocks.len() < blocks_needed as usize {
         panic!("Not enough free blocks!");
     }
-    Some((allocated_blocks, bitmap_bits))  // 👈 Return BOTH
+    Some((allocated_blocks, bitmap_bits))
 }
 
 fn write_content_to_blocks(
     file: &mut fs::File,
     superblock: &Superblock,
-    allocated_blocks: &Vec<u32>,
+    allocated_blocks: &Vec<u16>,
 
     content: &str,
 ) {
@@ -245,11 +246,6 @@ fn write_content_to_blocks(
     let inode_size = std::mem::size_of::<Inode>();
     let bitmap_offset = inode_table_offset + (superblock.total_inodes as u64 * inode_size as u64);
     let bitmap_size = ((superblock.total_blocks + 7) / 8) as usize;
-
-    // let data_area_offset = superblock.block_size as u64 * superblock.total_blocks as u64
-    //     - (superblock.block_size as u64 * superblock.total_blocks as u64
-    //         - bitmap_offset
-    //         - bitmap_size as u64);
 
     let content_bytes = content.as_bytes();
     for (i, &block) in allocated_blocks.iter().enumerate() {
@@ -261,15 +257,14 @@ fn write_content_to_blocks(
         let end = ((i + 1) * superblock.block_size as usize).min(content_bytes.len());
         file.write_all(&content_bytes[start..end]).unwrap();
     }
-    // return data_area_offset;
 }
 
 fn write_inode(
     name: &str,
     file: &mut fs::File,
     superblock: &Superblock,
-    inode_idx: u32,
-    allocated_blocks: &Vec<u32>,
+    inode_idx: u16,
+    allocated_blocks: &Vec<u16>,
     content: &str,
 ) {
     let mut name_bytes = [0u8; 32];
@@ -277,11 +272,11 @@ fn write_inode(
     name_bytes[..name_len].copy_from_slice(&name.as_bytes()[..name_len]);
     let content_bytes = content.as_bytes();
     let blocks_needed =
-        ((content_bytes.len() as u32 + superblock.block_size - 1) / superblock.block_size).max(1);
+        ((content_bytes.len() as u16 + superblock.block_size - 1) / superblock.block_size).max(1);
     let new_inode = Inode {
         used: 1,
         name: name_bytes,
-        size: content_bytes.len() as u32,
+        size: content_bytes.len() as u16,
         start_block: allocated_blocks[0],
         block_count: blocks_needed,
     };
@@ -301,7 +296,7 @@ fn create(name: &str, content: &str) {
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(".bin")
+        .open("fs-10153287.bin")
         .expect("Sistema de archivo no encontrado corre 'format' primero!");
 
     let superblock = read_superblock(&mut file);
@@ -309,42 +304,34 @@ fn create(name: &str, content: &str) {
     let inode_table_offset = std::mem::size_of::<Superblock>() as u64;
     let inode_size = std::mem::size_of::<Inode>();
     let free_inode_index = find_free_inode(&mut file, &superblock);
-    
-    // 👇 Now we get BOTH blocks and bitmap
-    let (allocated_blocks, bitmap_bits) = find_free_block(&mut file, &superblock, content)
-        .expect("Failed to allocate blocks");
-    
+
+    let (allocated_blocks, bitmap_bits) =
+        find_free_block(&mut file, &superblock, content).expect("Failed to allocate blocks");
+
     let content_bytes = content.as_bytes();
     let blocks_needed =
-        ((content_bytes.len() as u32 + superblock.block_size - 1) / superblock.block_size).max(1);
+        ((content_bytes.len() as u16 + superblock.block_size - 1) / superblock.block_size).max(1);
     let bitmap_offset = inode_table_offset + (superblock.total_inodes as u64 * inode_size as u64);
-    
+
     println!(
         "Free inode index: {:?}, allocated blocks: {:?}",
         free_inode_index, allocated_blocks
     );
-    
-    write_content_to_blocks(
-        &mut file,
-        &superblock,
-        &allocated_blocks,  // 👈 No need to clone/unwrap
-        content,
-    );
-    
+
+    write_content_to_blocks(&mut file, &superblock, &allocated_blocks, content);
+
     write_inode(
         name,
         &mut file,
         &superblock,
         free_inode_index.unwrap(),
-        &allocated_blocks,  // 👈 No need to unwrap
+        &allocated_blocks,
         content,
     );
 
-    // ✅ Write the UPDATED bitmap (not a fresh one!)
     file.seek(std::io::SeekFrom::Start(bitmap_offset)).unwrap();
-    file.write_all(&bitmap_bits).unwrap();  // 👈 Use the bitmap from find_free_block!
+    file.write_all(&bitmap_bits).unwrap();
 
-    // Update superblock
     let updated_sb = Superblock {
         used_blocks: superblock.used_blocks + blocks_needed,
         used_inodes: superblock.used_inodes + 1,
@@ -363,11 +350,11 @@ fn create(name: &str, content: &str) {
     println!("✅ archivo '{}' creado exitosamente!", name);
 }
 fn format() {
-    let block_size: u32 = 512;
-    let total_blocks: u32 = 1024;
-    let total_inodes: u32 = 128;
+    let block_size: u16 = 512;
+    let total_blocks: u16 = 2048;
+    let total_inodes: u16 = 128;
     let superblock = Superblock {
-        total_size: block_size * total_blocks,
+        total_size: (block_size as u32 * total_blocks as u32) as u32,
         block_size,
         total_blocks,
         total_inodes,
@@ -389,7 +376,7 @@ fn format() {
         bits: vec![0; (total_blocks / 8) as usize],
     };
 
-    let mut file = fs::File::create(".bin").expect("Unable to format filesystem");
+    let mut file = fs::File::create("fs-10153287.bin").expect("Unable to format filesystem");
 
     let sb_bytes = unsafe {
         std::slice::from_raw_parts(
@@ -399,7 +386,6 @@ fn format() {
     };
     file.write_all(sb_bytes).unwrap();
 
-    // Write inode table
     for inode in &inode_table {
         let inode_bytes = unsafe {
             std::slice::from_raw_parts(
@@ -410,11 +396,9 @@ fn format() {
         file.write_all(inode_bytes).unwrap();
     }
 
-    // Write bitmap
     file.write_all(&bitmap.bits).unwrap();
 
-    // Optionally write empty data blocks
-    file.set_len((block_size * total_blocks) as u64).unwrap();
+    file.set_len((block_size as u32 * total_blocks as u32) as u64).unwrap();
 
     println!("Filesystem formatted!");
 }
