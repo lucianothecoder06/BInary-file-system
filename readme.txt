@@ -1,3 +1,48 @@
+Pontificia Universidad Católica Madre y Maestra
+Facultad de Ciencias e Ingeniería
+Escuela de Ingeniería en Computación y Telecomunicaciones
+Presentado Por: Scarlet Abreu Sánchez
+ID: 10153287
+Asignatura: Sistemas Operativos
+Presentado A: Carlos Camacho
+Asignación: Creación de Sistema de Archivos Simple
+
+Este programa simula un sistema de archivo virtual en un archivo binario llamado "fs-10153287.bin" donde se realizaran operaciones sin utilizar el filesystem real, y sin necesidad de privilegios.
+
+Requerimientos: 
+
+minimos (programa ya compilado):
+espacio: 1mb disponible
+ram: 50mb
+cpu: cualquiera
+
+Recomendados
+espacio: 512 gb 
+ram: 128gb
+cpu: intel core i9 ultra
+gpu: nvidea rtx 5090
+
+Ya quitando los chistes...
+
+Diseno del archivo:
+
+El achivo esta subdividio en vairas secciones
+
+Superblock(la portada) 16 bytes: almacena los datos generales del sistema de archivo, su tamano de los bloques, cantidad de inodos, bloques usados etc, este superbloque puede controlar un sistema de archivos de hasta 4gb.
+Tabla de inodos(el indice) 4992 bytes: contiene 128 espacios para guardar la metadata de cada archivo (un inodo por archivo), digase su nombre, su tamano y su direccion.
+Bitmap 128 bytes: un vectos de 128 bytes o 1024 bits, que representa a cada uno de los bloques para saber si esta usado o disponible
+
+Se implementaron 4 comandos:
+--help: este muestra todos los comandos y que hacen
+ls: enlista todos los archivos del sistema de archivo con su nombre, tamano y direccion
+cat <nombre de archivo>: Muestra los contenidos del archivo nombrado
+create <nombre> <contenido>: Crea un archivo con el nombre elegido, y el contenido digitado
+format: inicializa el sistema de archivo
+
+Limitaciones:
+Los archivos solo soportan texto y los nombres de estos archivos estan limitados a 32 caracteres.
+El sistema permite como maximo 128 archivos, debido al tamano de la tabla de inodos. La Configuración actual no es ideal si se van a almacenar muchos archivos pequenos ya que tiene un gran desperdicio de bloques debido a que cada bloque es de 1024 bytes, existen 1024 bloques. Con la Configuración actual del superbloque el sistema de archivos solo puede escalar a como maximo 4gb.
+
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -403,3 +448,4 @@ fn format() {
 
     println!("Filesystem formatted!");
 }
+
